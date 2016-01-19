@@ -4,6 +4,42 @@ import re
 import copy
 import visual
 import time
+import wx
+
+from visual import scene
+from visual import vector
+from visual import pi
+from visual import display
+
+from visual import rotate
+
+from visual import color
+from visual import arrow
+from visual import sphere
+from visual import rate
+
+framesPath = "frames"   # Where to save animation frames
+
+frameCount = 1            # number the frames
+
+# make a subdir for all the animation frames
+# yes, this is the best way to do it in python (there is no atomic "make if does not exist")
+
+try: 
+    os.makedirs(framesPath)
+except OSError:
+    if not os.path.isdir(framesPath):
+        raise
+
+scene.autoscale = False       # Dont jump in and out durring the animation
+
+scene.userzoom = False
+scene.userspin = False
+
+scene.range = vector( 3.8,3.8,3.8 )               # doesn't work unless you explicity set this. Bug?
+scene.forward = vector( -0.5,-0.5,-0.75 )
+
+scene.center = vector( 1,1,0)           # cubes are on 0,1,2 grid.
 
 print("pysolve - solve for 3x3 cube 1.00")
 
@@ -21,27 +57,81 @@ C[(1,0,0)] =    [(0,0,1),   (0,1,0),    (0,0,-1),   (0,-1,0)]
 C[(0,0,-1)] =   [(0,1,0),   (1,0,0),    (0,-1,0),   (-1,0,0)]
 C[(0,-1,0)] =   [(0,0,1),   (1,0,0),    (0,0,-1),   (-1,0,0)]
 C[(-1,0,0)] =   [(0,0,1),   (0,1,0),    (0,0,-1),   (0,-1,0)]
-boxlist = {}
+arrowlist = {}
 
-# build all the boxes initially
+# build all the arrows initially
 for x in range(3):
     for y in range(3):
         for z in range(3):
-            boxlist[(x,y,z)] = visual.box(length=.95, height=.95, width=.95,
-                                          opacity=0.7, material=visual.materials.wood, pos=(x,y,z), visible = False)
+
+            # pos specifies the starting point of the arrow, which is in the center of the cube
+            arrowlist[(x,y,z)] = visual.arrow( axis=(1,1,1), 
+                                          opacity=1.0, material=visual.materials.diffuse, pos=(1-x,1-y,1-z), visible = False)
+
+
+originSphere = sphere(radius=0.1) # visually mark the begining of the chain with a sphere
+
+# tweak this for how fast your computer is
+fps = 60                     ## Frames per second
+
+# tweak this for how fast you want the moves to run 
+mps = 5                      ## moves per second
+
+
+rpm = (fps/mps)             ## Computed rotations per move (higher this is, the smoother the rotation will appear)
+
+
+winPause= 1                  ## How long in seconds to freeze after solution found
+winMoves=127                 ## Number of moves until 1st solution (found emperically by this very program!)
+
+
+fpw = (winPause*fps)                    ## computed frames per win - how many frames to pause for
+
+fpr = (winMoves*mps) + (winPause*fps)   ## frames per rotation (this computes a value to have the 1st solution land just before the 1st rotation is complete)
+
+rpf = (2.0*pi) / fpr                    ## computed radians per frame
+
+
+# rotate one step
+
+def showFrame():    
+    scene.forward =rotate( scene.forward , angle= rpf, axis=scene.up)
+    rate(fps)
+                
+
 def DrawSSS(sequence):
-    global boxlist
 
     # make all the boxes invisible
-    for b in boxlist:
-        boxlist[b].visible = False
+    for b in arrowlist:
+        arrowlist[b].visible = False
 
-    # make only the boxes succesfully placed visible
-    for xyz in sequence:
-        boxlist[xyz].visible = True
+    prev = None  # keep track of previous cube becuase arrows go from middle of one cube to middle of next one
+  
+    for pos,xyz in enumerate(sequence):
 
-    visual.rate(10)
+        bcolor =  color.hsv_to_rgb( ( (pos/2.0)/27.0 , 0.85, 0.85 ) )   # nice color space to show progress
 
+        if prev==None:          ## need two boxes to have an arrow
+
+            # Show the starting point with a dot
+            originSphere.pos = xyz
+            originSphere.color = bcolor 
+
+        else:
+                        
+            arrowlist[xyz].color = bcolor
+ 
+            (px,py,pz) = prev
+            (bx,by,bz) = xyz
+            arrowlist[xyz].pos = prev
+            arrowlist[xyz].axis = (bx-px, by-py, bz-pz)
+            arrowlist[xyz].visible = True
+            
+        prev=xyz
+
+    for rotationStep in range( rpm ):
+        showFrame()
+     
 
 def PlaceNext(idx, sss, last_piece_position, last_piece_entry_face):
 
@@ -49,7 +139,8 @@ def PlaceNext(idx, sss, last_piece_position, last_piece_entry_face):
     # are we done, if so declare success
     if idx >= 27:
         print(sequence)
-        time.sleep(1)
+        for e in range(fpw):     ## pause a moment for applause!
+            showFrame()
         return
 
     idx += 1
